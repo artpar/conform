@@ -168,7 +168,7 @@ func Strings(iface interface{}) error {
 				if slice, ok := el.Interface().([]string); ok {
 					for i, input := range slice {
 						tags := v.Tag.Get("conform")
-						slice[i] = transformString(input, tags)
+						slice[i] = TransformString(input, tags)
 					}
 					return nil
 				} else {
@@ -187,14 +187,14 @@ func Strings(iface interface{}) error {
 			if el.CanSet() {
 				tags := v.Tag.Get("conform")
 				input := el.String()
-				el.SetString(transformString(input, tags))
+				el.SetString(TransformString(input, tags))
 			}
 		}
 	}
 	return nil
 }
 
-func transformString(input, tags string) string {
+func TransformString(input, tags string) string {
 	if tags == "" {
 		return input
 	}
