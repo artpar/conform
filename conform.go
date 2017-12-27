@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"html/template"
 	"reflect"
 	"regexp"
 	"strings"
@@ -21,6 +22,28 @@ var patterns = map[string]*regexp.Regexp{
 	"alpha":      regexp.MustCompile("[\\pL]"),
 	"nonAlpha":   regexp.MustCompile("[^\\pL]"),
 	"name":       regexp.MustCompile("[\\p{L}]([\\p{L}|[:space:]|-]*[\\p{L}])*"),
+}
+
+// a valid email will only have one "@", but let's treat the last "@" as the domain part separator
+func emailLocalPart(s string) string {
+	i := strings.LastIndex(s, "@")
+	if i == -1 {
+		return s
+	}
+	return s[0:i]
+}
+
+func emailDomainPart(s string) string {
+	i := strings.LastIndex(s, "@")
+	if i == -1 {
+		return ""
+	}
+	return s[i+1:]
+}
+
+func email(s string) string {
+	// According to rfc5321, "The local-part of a mailbox MUST BE treated as case sensitive"
+	return emailLocalPart(s) + "@" + strings.ToLower(emailDomainPart(s))
 }
 
 func camelTo(s, sep string) string {
@@ -170,13 +193,11 @@ func Strings(iface interface{}) error {
 						tags := v.Tag.Get("conform")
 						slice[i] = TransformString(input, tags)
 					}
-					return nil
 				} else {
 					val := reflect.ValueOf(el.Interface())
 					for i := 0; i < val.Len(); i++ {
 						Strings(val.Index(i).Addr().Interface())
 					}
-					return nil
 				}
 			}
 		case reflect.Struct:
@@ -223,7 +244,7 @@ func TransformString(input, tags string) string {
 		case "name":
 			input = formatName(input)
 		case "email":
-			input = strings.ToLower(strings.TrimSpace(input))
+			input = email(strings.TrimSpace(input))
 		case "num":
 			input = onlyNumbers(input)
 		case "!num":
@@ -232,6 +253,10 @@ func TransformString(input, tags string) string {
 			input = onlyAlpha(input)
 		case "!alpha":
 			input = stripAlpha(input)
+		case "!html":
+			input = template.HTMLEscapeString(input)
+		case "!js":
+			input = template.JSEscapeString(input)
 		}
 	}
 	return input
