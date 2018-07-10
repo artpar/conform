@@ -16,12 +16,16 @@ import (
 
 type x map[string]string
 
+type sanitizer func(string) string
+
+var sanitizers = map[string]sanitizer{}
+
 var patterns = map[string]*regexp.Regexp{
 	"numbers":    regexp.MustCompile("[0-9]"),
 	"nonNumbers": regexp.MustCompile("[^0-9]"),
 	"alpha":      regexp.MustCompile("[\\pL]"),
 	"nonAlpha":   regexp.MustCompile("[^\\pL]"),
-	"name":       regexp.MustCompile("[\\p{L}]([\\p{L}|[:space:]|-]*[\\p{L}])*"),
+	"name":       regexp.MustCompile("[\\p{L}]([\\p{L}|[:space:]|\\-|\\']*[\\p{L}])*"),
 }
 
 // a valid email will only have one "@", but let's treat the last "@" as the domain part separator
@@ -164,14 +168,20 @@ func stripAlpha(s string) string {
 func onlyOne(s string, m []x) string {
 	for _, v := range m {
 		for f, r := range v {
-			s = regexp.MustCompile(fmt.Sprintf("%s{2,}", f)).ReplaceAllLiteralString(s, r)
+			s = regexp.MustCompile(fmt.Sprintf("%s", f)).ReplaceAllLiteralString(s, r)
 		}
 	}
 	return s
 }
 
 func formatName(s string) string {
-	first := onlyOne(strings.ToLower(s), []x{x{"[^\\pL-\\s]": ""}, x{"\\s": " "}, x{"-": "-"}})
+	first := onlyOne(strings.ToLower(s), []x{
+		{"[^\\pL-\\s']": ""}, // cut off everything except [ alpha, hyphen, whitespace, apostrophe]
+		{"\\s{2,}": " "},     // trim more than two whitespaces to one
+		{"-{2,}": "-"},       // trim more than two hyphens to one
+		{"'{2,}": "'"},       // trim more than two apostrophes to one
+		{"( )*-( )*": "-"},   // trim enclosing whitespaces around hyphen
+	})
 	return strings.Title(patterns["name"].FindString(first))
 }
 
@@ -182,6 +192,9 @@ func Strings(iface interface{}) error {
 		return errors.New("Not a pointer")
 	}
 	ift := reflect.Indirect(ifv).Type()
+	if ift.Kind() != reflect.Struct {
+		return nil
+	}
 	for i := 0; i < ift.NumField(); i++ {
 		v := ift.Field(i)
 		el := reflect.Indirect(ifv.Elem().FieldByName(v.Name))
@@ -257,7 +270,16 @@ func TransformString(input, tags string) string {
 			input = template.HTMLEscapeString(input)
 		case "!js":
 			input = template.JSEscapeString(input)
+		default:
+			if s, ok := sanitizers[split]; ok {
+				input = s(input)
+			}
 		}
 	}
 	return input
+}
+
+// AddSanitizer associates a sanitizer with a key, which can be used in a Struct tag
+func AddSanitizer(key string, s sanitizer) {
+	sanitizers[key] = s
 }
